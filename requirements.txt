@@ -1,1 +1,8 @@
 streamlit
+requests
+pdfplumber
+textract
+beautifulsoup4
+pandas
+matplotlib
+scikit-learn
