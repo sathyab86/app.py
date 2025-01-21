@@ -1,148 +1,226 @@
 import streamlit as st
-import requests
-import pdfplumber
-import textract
-from bs4 import BeautifulSoup
-import pandas as pd
-import matplotlib.pyplot as plt
-from sklearn.feature_extraction.text import CountVectorizer
+import json
+import os
+from datetime import datetime
 
-# Industry and Capability Keyword Mapping
-industry_keywords = {
-    "Manufacturing": {
-        "QMS": ["ISO 9001", "Six Sigma", "Lean Manufacturing", "Kaizen", "Quality Control", "Root Cause Analysis"],
-        "Process Improvement": ["Total Quality Management", "5S", "Continuous Improvement", "Kanban", "Poka-Yoke"],
-    },
-    "Aerospace": {
-        "QMS": ["AS9100", "FAA Compliance", "NADCAP", "Aviation Safety Standards", "ISO 9001", "Traceability"],
-        "Material Testing": ["Fatigue Testing", "Non-Destructive Testing (NDT)", "Tensile Testing", "Heat Treatment"],
-    },
-    "Automotive": {
-        "QMS": ["IATF 16949", "ISO 26262", "APQP", "PPAP", "FMEA", "Automotive SPICE"],
-        "Process Improvement": ["Lean Manufacturing", "Kanban", "Continuous Improvement", "Error Proofing", "Kaizen"],
-    },
-    "Steel Fabrication": {
-        "QMS": ["ISO 9001", "Welding Certifications", "AWS Standards", "Fabrication Tolerances", "Material Traceability"],
-        "Safety Standards": ["OSHA Compliance", "ISO 45001", "Risk Assessment", "PPE Requirements"],
-    },
-    "Semiconductor": {
-        "QMS": ["ISO 9001", "ISO 14001", "ISO 45001", "Traceability", "Cleanroom Standards", "Yield Optimization"],
-        "Process Control": ["SPC", "Design for Manufacturing (DFM)", "Failure Analysis", "Defect Density Control"],
-    },
-    "Healthcare": {
-        "QMS": ["ISO 13485", "FDA Compliance", "Patient Safety", "Medical Device Standards", "HIPAA"],
-        "Data Management": ["Electronic Health Records", "Data Privacy", "Interoperability Standards"],
-    },
-    "IT": {
-        "QMS": ["ISO 20000", "ITIL", "Service Level Agreements", "Incident Management", "Problem Management"],
-        "Cybersecurity": ["ISO 27001", "SOC 2", "GDPR Compliance", "Risk Assessment", "Vulnerability Management"],
-    },
-}
-
-# App title
-st.title("Enhanced Quality Benchmark Scraper & Scorer")
-
-# Section 1: Scrape data from URL
-st.header("Step 1: Scrape Data from URL")
-url = st.text_input("Enter the report URL:")
-if st.button("Scrape URL"):
-    try:
-        response = requests.get(url)
-        soup = BeautifulSoup(response.text, 'html.parser')
-        report_text = soup.get_text()
-        st.success("Data successfully scraped from URL!")
-        st.text_area("Scraped Content Preview:", value=report_text[:500], height=200)
-    except Exception as e:
-        st.error(f"Error scraping data from URL: {e}")
-
-# Section 2: Upload files for analysis
-st.header("Step 2: Upload Report Files for Processing")
-uploaded_file = st.file_uploader("Upload a report (PDF, Word, or Text):", type=["pdf", "docx", "txt"])
-uploaded_content = ""
-if uploaded_file is not None:
-    try:
-        file_type = uploaded_file.name.split(".")[-1]
-        if file_type == "pdf":
-            with pdfplumber.open(uploaded_file) as pdf:
-                uploaded_content = "\n".join(page.extract_text() for page in pdf.pages)
-        elif file_type in ["docx", "txt"]:
-            uploaded_content = textract.process(uploaded_file).decode("utf-8")
-        else:
-            st.error("Unsupported file type.")
+def create_capability_management_ui(capability_manager):
+    st.title("Quality Capability Management")
+    
+    # Add tabs for different management functions
+    manage_tab, import_export_tab = st.tabs(["Manage Capabilities", "Import/Export"])
+    
+    with manage_tab:
+        # Sidebar for navigation
+        action = st.sidebar.radio(
+            "Select Action",
+            ["View All Capabilities", "Add New Capability", "Edit Capability", "Remove Capability"]
+        )
         
-        st.success("File successfully processed!")
-        st.text_area("Extracted Content Preview:", value=uploaded_content[:500], height=200)
-    except Exception as e:
-        st.error(f"Error processing file: {e}")
+        if action == "View All Capabilities":
+            st.header("Current Capabilities")
+            
+            # Group capabilities by category
+            categories = capability_manager.get_all_categories()
+            
+            for category in categories:
+                st.subheader(f"Category: {category}")
+                caps = capability_manager.get_capabilities_by_category(category)
+                
+                for cap_id, cap in caps.items():
+                    with st.expander(f"{cap.name} ({cap_id})"):
+                        st.write("**Category:** ", cap.category)
+                        st.write("**Scoring Criteria:**")
+                        for score, description in cap.scoring_criteria.items():
+                            st.write(f"Level {score}: {description}")
+        
+        elif action == "Add New Capability":
+            st.header("Add New Capability")
+            
+            # Input fields for new capability
+            cap_id = st.text_input("Capability ID (no spaces)", key="new_cap_id")
+            cap_name = st.text_input("Capability Name", key="new_cap_name")
+            
+            # Either select existing category or create new
+            existing_categories = capability_manager.get_all_categories()
+            use_existing = st.checkbox("Use existing category", value=True)
+            
+            if use_existing:
+                cap_category = st.selectbox("Select Category", existing_categories)
+            else:
+                cap_category = st.text_input("New Category Name")
+            
+            # Dynamic scoring criteria input
+            st.subheader("Scoring Criteria")
+            scoring_criteria = {}
+            
+            for score in ["1", "3", "5", "7", "10"]:
+                description = st.text_area(
+                    f"Level {score} Description",
+                    key=f"new_level_{score}"
+                )
+                if description:
+                    scoring_criteria[score] = description
+            
+            if st.button("Add Capability"):
+                if cap_id and cap_name and cap_category and scoring_criteria:
+                    try:
+                        capability_manager.add_capability(
+                            cap_id,
+                            cap_name,
+                            cap_category,
+                            scoring_criteria
+                        )
+                        st.success(f"Successfully added capability: {cap_name}")
+                    except Exception as e:
+                        st.error(f"Error adding capability: {str(e)}")
+                else:
+                    st.warning("Please fill in all required fields")
+        
+        elif action == "Edit Capability":
+            st.header("Edit Capability")
+            
+            # Select capability to edit
+            cap_id = st.selectbox(
+                "Select Capability to Edit",
+                list(capability_manager.capabilities.keys())
+            )
+            
+            if cap_id:
+                cap = capability_manager.capabilities[cap_id]
+                
+                # Edit fields
+                new_name = st.text_input("Capability Name", value=cap.name)
+                new_category = st.selectbox(
+                    "Category",
+                    capability_manager.get_all_categories(),
+                    index=capability_manager.get_all_categories().index(cap.category)
+                )
+                
+                # Edit scoring criteria
+                st.subheader("Edit Scoring Criteria")
+                new_scoring_criteria = {}
+                
+                for score in ["1", "3", "5", "7", "10"]:
+                    default_desc = cap.scoring_criteria.get(score, "")
+                    description = st.text_area(
+                        f"Level {score} Description",
+                        value=default_desc,
+                        key=f"edit_level_{score}"
+                    )
+                    if description:
+                        new_scoring_criteria[score] = description
+                
+                if st.button("Save Changes"):
+                    try:
+                        capability_manager.edit_capability(
+                            cap_id,
+                            name=new_name,
+                            category=new_category,
+                            scoring_criteria=new_scoring_criteria
+                        )
+                        st.success("Changes saved successfully")
+                    except Exception as e:
+                        st.error(f"Error saving changes: {str(e)}")
+        
+        elif action == "Remove Capability":
+            st.header("Remove Capability")
+            
+            cap_id = st.selectbox(
+                "Select Capability to Remove",
+                list(capability_manager.capabilities.keys())
+            )
+            
+            if cap_id:
+                cap = capability_manager.capabilities[cap_id]
+                
+                st.warning(f"Are you sure you want to remove {cap.name} ({cap_id})?")
+                st.write("This action cannot be undone.")
+                
+                if st.button("Confirm Removal"):
+                    try:
+                        capability_manager.remove_capability(cap_id)
+                        st.success(f"Successfully removed capability: {cap_id}")
+                    except Exception as e:
+                        st.error(f"Error removing capability: {str(e)}")
+    
+    with import_export_tab:
+        st.header("Import/Export Capabilities")
+        
+        # Export capabilities
+        if st.button("Export Capabilities"):
+            # Convert capabilities to JSON-serializable format
+            export_data = {
+                cap_id: {
+                    "name": cap.name,
+                    "category": cap.category,
+                    "scoring_criteria": cap.scoring_criteria
+                }
+                for cap_id, cap in capability_manager.capabilities.items()
+            }
+            
+            # Create JSON string
+            json_str = json.dumps(export_data, indent=2)
+            
+            # Create download button
+            st.download_button(
+                label="Download Capabilities JSON",
+                data=json_str,
+                file_name=f"quality_capabilities_{datetime.now().strftime('%Y%m%d')}.json",
+                mime="application/json"
+            )
+        
+        # Import capabilities
+        st.subheader("Import Capabilities")
+        uploaded_file = st.file_uploader(
+            "Upload Capabilities JSON",
+            type=["json"]
+        )
+        
+        if uploaded_file is not None:
+            try:
+                import_data = json.load(uploaded_file)
+                
+                # Preview import data
+                st.write("Preview of capabilities to import:")
+                st.json(import_data)
+                
+                if st.button("Confirm Import"):
+                    for cap_id, cap_data in import_data.items():
+                        capability_manager.add_capability(
+                            cap_id,
+                            cap_data["name"],
+                            cap_data["category"],
+                            cap_data["scoring_criteria"]
+                        )
+                    st.success("Capabilities imported successfully")
+            except Exception as e:
+                st.error(f"Error importing capabilities: {str(e)}")
 
-# Section 3: Industry-Specific Keywords
-st.header("Step 3: Industry-Specific Keywords")
-industry = st.selectbox("Select Industry:", options=list(industry_keywords.keys()))
-capability = st.selectbox(
-    "Select Capability:", 
-    options=list(industry_keywords[industry].keys()) if industry else []
-)
+# Add this to your main Streamlit app:
+def main():
+    st.set_page_config(layout="wide")
+    
+    # Initialize capability manager
+    if 'capability_manager' not in st.session_state:
+        st.session_state.capability_manager = QualityCapabilityManager()
+    
+    # Add a new tab for capability management
+    tabs = st.tabs([
+        "Data Collection",
+        "Analysis",
+        "Capability Management"
+    ])
+    
+    with tabs[0]:
+        # Your existing data collection UI
+        pass
+    
+    with tabs[1]:
+        # Your existing analysis UI
+        pass
+    
+    with tabs[2]:
+        create_capability_management_ui(st.session_state.capability_manager)
 
-if industry and capability:
-    st.subheader(f"Relevant Keywords for {capability} in {industry}:")
-    keywords = industry_keywords[industry][capability]
-    st.write(", ".join(keywords))
-
-# Section 4: Analysis & Visualization
-st.header("Step 4: Analyze and Visualize Data")
-all_text = ""
-if uploaded_content.strip():
-    all_text = uploaded_content
-elif url.strip():
-    all_text = report_text
-
-if all_text:
-    # Word frequency analysis
-    st.subheader("Word Frequency Analysis")
-    vectorizer = CountVectorizer(stop_words='english')
-    word_counts = vectorizer.fit_transform([all_text])
-    word_freq = pd.DataFrame({'Word': vectorizer.get_feature_names_out(), 'Frequency': word_counts.toarray()[0]})
-    word_freq = word_freq.sort_values(by="Frequency", ascending=False).head(10)
-    st.dataframe(word_freq)
-
-    # Plotting word frequencies
-    st.subheader("Word Frequency Visualization")
-    fig, ax = plt.subplots()
-    ax.barh(word_freq["Word"], word_freq["Frequency"], color='skyblue')
-    ax.set_xlabel("Frequency")
-    ax.set_ylabel("Words")
-    ax.set_title("Top 10 Words by Frequency")
-    st.pyplot(fig)
-
-# Section 5: Custom Scoring
-st.header("Step 5: Generate Custom Scores")
-criteria_tags = st.text_area("Enter additional capability tags/criteria for scoring (comma-separated):")
-if st.button("Generate Scores"):
-    if criteria_tags or (industry and capability):
-        # Combine industry-specific keywords and user-defined tags
-        tags = [tag.strip().lower() for tag in criteria_tags.split(",")]
-        if industry and capability:
-            tags += [keyword.lower() for keyword in industry_keywords[industry][capability]]
-
-        # Scoring
-        tag_scores = {tag: all_text.lower().count(tag) for tag in tags}
-        score_df = pd.DataFrame(list(tag_scores.items()), columns=["Criterion", "Score"])
-        st.dataframe(score_df)
-
-        # Display average score
-        avg_score = score_df["Score"].mean()
-        st.subheader(f"Average Score: {avg_score:.2f}")
-
-        # Visualize scores
-        fig, ax = plt.subplots()
-        ax.bar(score_df["Criterion"], score_df["Score"], color='orange')
-        ax.set_ylabel("Score")
-        ax.set_title("Scores by Criterion")
-        st.pyplot(fig)
-    else:
-        st.error("Please enter at least one capability tag or select industry keywords.")
-
-# Footer
-st.markdown("---")
-st.markdown("Developed for benchmarking quality reports using scraping, analysis, and scoring.")
-
+if __name__ == "__main__":
+    main()
