@@ -130,219 +130,160 @@ class WebScraper:
 def create_data_collection_ui(capability_manager):
     st.header("Quality Data Collection")
     
-    # Add tabs for manual and automated collection
-    collection_tab, scraping_tab = st.tabs(["Manual Assessment", "Website Analysis"])
+    # Create tabs for different collection methods
+    manual_tab, web_tab = st.tabs(["Manual Entry", "Website Analysis"])
     
-    with scraping_tab:
+    # Web Scraping Tab
+    with web_tab:
         st.subheader("Website Analysis")
         
-        company_url = st.text_input("Company Website URL")
-        
+        col1, col2 = st.columns(2)
+        with col1:
+            company_name = st.text_input("Company Name", key="web_company_name")
+            company_url = st.text_input("Company Website URL")
+        with col2:
+            industry = st.selectbox("Industry", ["Manufacturing", "Technology", "Healthcare", "Automotive", "Other"], key="web_industry")
+            assessment_date = st.date_input("Assessment Date", key="web_date")
+
         if st.button("Analyze Website"):
             if company_url:
                 with st.spinner("Analyzing website..."):
-                    scraper = WebScraper()
-                    results = scraper.scrape_website(company_url)
-                    
-                    if 'error' in results:
-                        st.error(f"Error analyzing website: {results['error']}")
-                    else:
-                        # Display results
+                    try:
+                        scraper = WebScraper()
+                        results = scraper.scrape_website(company_url)
+                        
+                        # Display results in organized sections
                         col1, col2 = st.columns(2)
                         
                         with col1:
-                            st.write("### Certifications Found")
+                            st.write("### Found Certifications")
                             if results['certifications_found']:
                                 for cert in results['certifications_found']:
                                     st.write(f"✓ {cert}")
                             else:
                                 st.write("No certifications found")
+                            
+                            st.write("### Quality Metrics")
+                            metrics = {
+                                "Quality References": results['quality_mentions'],
+                                "Process References": results['process_mentions'],
+                                "Tools References": results['tools_mentions']
+                            }
+                            for metric, value in metrics.items():
+                                st.metric(metric, value)
                         
                         with col2:
-                            st.write("### Quality Indicators")
-                            st.write(f"Quality mentions: {results['quality_mentions']}")
-                            st.write(f"Process mentions: {results['process_mentions']}")
-                            st.write(f"Tools mentions: {results['tools_mentions']}")
+                            st.write("### Suggested Capability Scores")
+                            for capability, score in results['suggested_scores'].items():
+                                if capability in capability_manager.capabilities:
+                                    st.metric(
+                                        capability_manager.capabilities[capability].name,
+                                        f"{score}/10"
+                                    )
                         
-                        st.write("### Suggested Scores")
-                        for capability, score in results['suggested_scores'].items():
-                            st.metric(
-                                capability,
-                                f"{score}/10",
-                                help="Suggested score based on website analysis"
-                            )
-                        
-                        st.write("### Quality-Related Pages")
+                        st.write("### Quality-Related Pages Found")
                         if results['quality_pages']:
-                            for page in results['quality_pages'][:5]:  # Show top 5 pages
+                            for page in results['quality_pages'][:5]:
                                 st.write(f"- {page}")
                         
                         # Option to use suggested scores
-                        if st.button("Use Suggested Scores"):
-                            for cap_id, score in results['suggested_scores'].items():
-                                st.session_state[f"score_{cap_id}"] = score
-                            st.success("Scores updated! Switch to Manual Assessment tab to review and adjust.")
+                        if st.button("Use These Scores for Assessment"):
+                            if 'assessments' not in st.session_state:
+                                st.session_state.assessments = []
+                            
+                            assessment = {
+                                "company_name": company_name,
+                                "industry": industry,
+                                "assessment_date": assessment_date.strftime("%Y-%m-%d"),
+                                "source": "web_analysis",
+                                "url": company_url,
+                                "scores": results['suggested_scores'],
+                                "evidence": {
+                                    "certifications": results['certifications_found'],
+                                    "quality_pages": results['quality_pages'],
+                                    "metrics": metrics
+                                }
+                            }
+                            
+                            st.session_state.assessments.append(assessment)
+                            st.success("Assessment saved! View it in the Analysis tab.")
+                    
+                    except Exception as e:
+                        st.error(f"Error analyzing website: {str(e)}")
             else:
                 st.warning("Please enter a website URL")
     
-    with collection_tab:
-        # Your existing manual collection code here
-        ...
-
-# Quality Capability Class
-class QualityCapability:
-    def __init__(self, name: str, category: str, scoring_criteria: dict):
-        self.name = name
-        self.category = category
-        self.scoring_criteria = scoring_criteria
-
-# Quality Manager Class
-class QualityCapabilityManager:
-    def __init__(self):
-        self.capabilities = {}
-        self._initialize_base_capabilities()
-    
-    def _initialize_base_capabilities(self):
-        # Manufacturing Quality Capabilities
-        self.add_capability(
-            "QMS",
-            "Quality Management System",
-            "System",
-            {
-                "1": "No formal QMS",
-                "3": "Basic quality procedures",
-                "5": "ISO 9001 implementation in progress",
-                "7": "ISO 9001 certified",
-                "10": "Advanced integrated QMS with multiple certifications"
-            }
-        )
+    # Manual Entry Tab
+    with manual_tab:
+        st.subheader("Manual Assessment")
         
-        self.add_capability(
-            "SPC",
-            "Statistical Process Control",
-            "Tools",
-            {
-                "1": "No SPC implementation",
-                "3": "Basic data collection",
-                "5": "Regular SPC charts and analysis",
-                "7": "Advanced SPC with process capability studies",
-                "10": "Real-time SPC with automated controls"
-            }
-        )
+        # Company Information
+        col1, col2 = st.columns(2)
+        with col1:
+            company_name = st.text_input("Company Name", key="manual_company_name")
+            industry = st.selectbox("Industry", ["Manufacturing", "Technology", "Healthcare", "Automotive", "Other"], key="manual_industry")
+        with col2:
+            assessment_date = st.date_input("Assessment Date", key="manual_date")
+            assessor = st.text_input("Assessor Name")
         
-        self.add_capability(
-            "ProcessControl",
-            "Process Control",
-            "Process",
-            {
-                "1": "No process control",
-                "3": "Basic process documentation",
-                "5": "Standard work instructions",
-                "7": "Process control plans",
-                "10": "Advanced process control system"
-            }
-        )
-    
-    def add_capability(self, id: str, name: str, category: str, scoring_criteria: dict):
-        self.capabilities[id] = QualityCapability(name, category, scoring_criteria)
-    
-    def remove_capability(self, id: str):
-        if id in self.capabilities:
-            del self.capabilities[id]
-    
-    def edit_capability(self, id: str, name: str = None, category: str = None, scoring_criteria: dict = None):
-        if id in self.capabilities:
-            cap = self.capabilities[id]
-            if name:
-                cap.name = name
-            if category:
-                cap.category = category
-            if scoring_criteria:
-                cap.scoring_criteria = scoring_criteria
-    
-    def get_capabilities_by_category(self, category: str) -> dict:
-        return {id: cap for id, cap in self.capabilities.items() if cap.category == category}
-    
-    def get_all_categories(self) -> list:
-        return list(set(cap.category for cap in self.capabilities.values()))
-
-# Data Collection UI
-def create_data_collection_ui(capability_manager):
-    st.header("Quality Data Collection")
-    
-    # Company Information
-    st.subheader("Company Information")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        company_name = st.text_input("Company Name")
-        industry = st.selectbox("Industry", ["Manufacturing", "Technology", "Healthcare", "Automotive", "Other"])
-    
-    with col2:
-        assessment_date = st.date_input("Assessment Date")
-        assessor = st.text_input("Assessor Name")
-    
-    # Capability Scoring
-    st.subheader("Capability Assessment")
-    
-    scores = {}
-    evidence = {}
-    
-    for category in capability_manager.get_all_categories():
-        st.write(f"\n### {category} Capabilities")
-        capabilities = capability_manager.get_capabilities_by_category(category)
+        # Capability Scoring
+        st.write("### Capability Assessment")
         
-        for cap_id, cap in capabilities.items():
-            col1, col2 = st.columns([2, 3])
+        scores = {}
+        evidence = {}
+        
+        for category in capability_manager.get_all_categories():
+            st.write(f"\n#### {category}")
+            capabilities = capability_manager.get_capabilities_by_category(category)
             
-            with col1:
-                score = st.slider(
-                    f"{cap.name}",
-                    min_value=1,
-                    max_value=10,
-                    step=2,
-                    value=5,
-                    key=f"score_{cap_id}"
-                )
-                scores[cap_id] = score
-            
-            with col2:
-                evidence[cap_id] = st.text_area(
-                    "Evidence/Notes",
-                    key=f"evidence_{cap_id}",
-                    height=100
-                )
+            for cap_id, cap in capabilities.items():
+                col1, col2 = st.columns([2, 3])
                 
-                # Show scoring criteria for reference
-                with st.expander("Scoring Criteria"):
-                    for level, desc in cap.scoring_criteria.items():
-                        if int(level) == score:
-                            st.markdown(f"**Level {level}:** {desc} 👈")
-                        else:
-                            st.write(f"Level {level}: {desc}")
-    
-    # Save Assessment
-    if st.button("Save Assessment"):
-        if not company_name:
-            st.error("Please enter company name")
-            return
+                with col1:
+                    scores[cap_id] = st.slider(
+                        f"{cap.name}",
+                        min_value=1,
+                        max_value=10,
+                        step=2,
+                        value=5,
+                        key=f"manual_score_{cap_id}"
+                    )
+                
+                with col2:
+                    evidence[cap_id] = st.text_area(
+                        "Evidence/Notes",
+                        key=f"manual_evidence_{cap_id}",
+                        height=100
+                    )
+                    
+                    # Show scoring criteria
+                    with st.expander("View Scoring Criteria"):
+                        for level, desc in cap.scoring_criteria.items():
+                            if int(level) == scores[cap_id]:
+                                st.markdown(f"**Level {level}:** {desc} 👈")
+                            else:
+                                st.write(f"Level {level}: {desc}")
         
-        assessment_data = {
-            "company_name": company_name,
-            "industry": industry,
-            "assessment_date": assessment_date.strftime("%Y-%m-%d"),
-            "assessor": assessor,
-            "scores": scores,
-            "evidence": evidence
-        }
-        
-        # Store in session state
-        if 'assessments' not in st.session_state:
-            st.session_state.assessments = []
-        
-        st.session_state.assessments.append(assessment_data)
-        st.success("Assessment saved successfully!")
-
+        # Save Assessment
+        if st.button("Save Manual Assessment"):
+            if company_name:
+                if 'assessments' not in st.session_state:
+                    st.session_state.assessments = []
+                
+                assessment = {
+                    "company_name": company_name,
+                    "industry": industry,
+                    "assessment_date": assessment_date.strftime("%Y-%m-%d"),
+                    "assessor": assessor,
+                    "source": "manual",
+                    "scores": scores,
+                    "evidence": evidence
+                }
+                
+                st.session_state.assessments.append(assessment)
+                st.success("Assessment saved successfully!")
+            else:
+                st.error("Please enter company name")
 # Analysis UI
 def create_analysis_ui(capability_manager):
     st.header("Quality Analysis Dashboard")
