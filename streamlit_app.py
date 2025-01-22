@@ -12,6 +12,10 @@ from urllib.parse import urlparse, urljoin
 import pdfplumber
 import io
 from typing import Dict, List, Optional
+# Add this at the very start of your file, after imports
+def test_app_running():
+    st.write("App is running!")
+    return True
 
 # Quality Capability Class
 class QualityCapability:
@@ -415,3 +419,37 @@ def create_analysis_ui(capability_manager):
         )
         
         st.plotly
+        
+if __name__ == "__main__":
+    # Test if app is running
+    test_app_running()
+    
+    st.set_page_config(layout="wide", page_title="Quality Management System")
+    
+    # Initialize session state for capability manager
+    if 'capability_manager' not in st.session_state:
+        st.session_state.capability_manager = QualityCapabilityManager()
+    
+    # Main title
+    st.title("Quality Management System")
+    
+    # Create tabs
+    tabs = st.tabs([
+        "Data Collection",
+        "Analysis",
+        "Capability Management",
+        "Export/Import"
+    ])
+    
+    # Populate tabs
+    with tabs[0]:
+        create_data_collection_ui(st.session_state.capability_manager)
+    
+    with tabs[1]:
+        create_analysis_ui(st.session_state.capability_manager)
+    
+    with tabs[2]:
+        create_capability_management_ui(st.session_state.capability_manager)
+    
+    with tabs[3]:
+        export_import_ui()
