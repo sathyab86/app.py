@@ -12,6 +12,44 @@ from urllib.parse import urlparse, urljoin
 import pdfplumber
 import io
 from typing import Dict, List, Optional
+
+# Move this to the very top of your file, right after the imports
+st.set_page_config(layout="wide", page_title="Quality Management System")
+
+# Your existing classes and functions here...
+
+def test_app_running():
+    st.write("App is running!")
+    return True
+
+if __name__ == "__main__":
+    # Main title
+    st.title("Quality Management System")
+    
+    # Initialize session state for capability manager
+    if 'capability_manager' not in st.session_state:
+        st.session_state.capability_manager = QualityCapabilityManager()
+    
+    # Create tabs
+    tabs = st.tabs([
+        "Data Collection",
+        "Analysis",
+        "Capability Management",
+        "Export/Import"
+    ])
+    
+    # Populate tabs
+    with tabs[0]:
+        create_data_collection_ui(st.session_state.capability_manager)
+    
+    with tabs[1]:
+        create_analysis_ui(st.session_state.capability_manager)
+    
+    with tabs[2]:
+        create_capability_management_ui(st.session_state.capability_manager)
+    
+    with tabs[3]:
+        export_import_ui()
 # Add this at the very start of your file, after imports
 def test_app_running():
     st.write("App is running!")
