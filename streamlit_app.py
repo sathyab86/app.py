@@ -6,6 +6,188 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime
 from typing import Dict, List, Optional
+# Add these imports at the top of app.py
+import requests
+from bs4 import BeautifulSoup
+import re
+from urllib.parse import urlparse, urljoin
+
+class WebScraper:
+    def __init__(self):
+        self.quality_indicators = {
+            'certifications': [
+                'ISO 9001', 'ISO 13485', 'AS9100', 'IATF 16949', 'API Q1',
+                'ISO 17025', 'GMP', 'HACCP', 'Six Sigma'
+            ],
+            'quality_terms': [
+                'quality management', 'quality control', 'quality assurance',
+                'QMS', 'quality policy', 'continuous improvement'
+            ],
+            'process_terms': [
+                'SPC', 'statistical process control', 'FMEA', 'process control',
+                'quality metrics', 'process validation'
+            ],
+            'tools_terms': [
+                'quality tools', 'measurement system', 'calibration', 
+                'inspection', 'testing equipment'
+            ]
+        }
+    
+    def scrape_website(self, url: str) -> dict:
+        """Scrape quality-related information from website"""
+        try:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+            response = requests.get(url, headers=headers, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Get text content
+            text_content = soup.get_text().lower()
+            
+            # Initialize results
+            results = {
+                'certifications_found': [],
+                'quality_mentions': 0,
+                'process_mentions': 0,
+                'tools_mentions': 0,
+                'quality_pages': [],
+                'suggested_scores': {}
+            }
+            
+            # Find certifications
+            for cert in self.quality_indicators['certifications']:
+                if cert.lower() in text_content:
+                    results['certifications_found'].append(cert)
+            
+            # Count quality-related terms
+            for term in self.quality_indicators['quality_terms']:
+                results['quality_mentions'] += len(re.findall(r'\b' + re.escape(term.lower()) + r'\b', text_content))
+            
+            # Count process-related terms
+            for term in self.quality_indicators['process_terms']:
+                results['process_mentions'] += len(re.findall(r'\b' + re.escape(term.lower()) + r'\b', text_content))
+            
+            # Count quality tools mentions
+            for term in self.quality_indicators['tools_terms']:
+                results['tools_mentions'] += len(re.findall(r'\b' + re.escape(term.lower()) + r'\b', text_content))
+            
+            # Find quality-related pages
+            for link in soup.find_all('a', href=True):
+                href = link.get('href')
+                if href and any(term in href.lower() for term in ['quality', 'certification', 'compliance']):
+                    full_url = urljoin(url, href)
+                    results['quality_pages'].append(full_url)
+            
+            # Calculate suggested scores
+            results['suggested_scores'] = self._calculate_suggested_scores(results)
+            
+            return results
+            
+        except Exception as e:
+            return {
+                'error': str(e),
+                'certifications_found': [],
+                'quality_mentions': 0,
+                'process_mentions': 0,
+                'tools_mentions': 0,
+                'quality_pages': [],
+                'suggested_scores': {}
+            }
+    
+    def _calculate_suggested_scores(self, results: dict) -> dict:
+        """Calculate suggested scores based on scraped data"""
+        scores = {}
+        
+        # QMS Score
+        qms_score = min(
+            (len(results['certifications_found']) * 2) +  # 2 points per certification
+            (results['quality_mentions'] // 5),           # 1 point per 5 quality mentions
+            10  # Max score of 10
+        )
+        scores['QMS'] = max(1, qms_score)  # Minimum score of 1
+        
+        # Process Control Score
+        process_score = min(
+            (results['process_mentions'] // 3) +          # 1 point per 3 process mentions
+            (len(results['quality_pages']) // 2),         # 1 point per 2 quality pages
+            10
+        )
+        scores['ProcessControl'] = max(1, process_score)
+        
+        # Tools Score
+        tools_score = min(
+            (results['tools_mentions'] // 2) +            # 1 point per 2 tools mentions
+            (len(results['certifications_found'])),       # 1 point per certification
+            10
+        )
+        scores['SPC'] = max(1, tools_score)
+        
+        return scores
+
+# Add to the Data Collection UI function:
+def create_data_collection_ui(capability_manager):
+    st.header("Quality Data Collection")
+    
+    # Add tabs for manual and automated collection
+    collection_tab, scraping_tab = st.tabs(["Manual Assessment", "Website Analysis"])
+    
+    with scraping_tab:
+        st.subheader("Website Analysis")
+        
+        company_url = st.text_input("Company Website URL")
+        
+        if st.button("Analyze Website"):
+            if company_url:
+                with st.spinner("Analyzing website..."):
+                    scraper = WebScraper()
+                    results = scraper.scrape_website(company_url)
+                    
+                    if 'error' in results:
+                        st.error(f"Error analyzing website: {results['error']}")
+                    else:
+                        # Display results
+                        col1, col2 = st.columns(2)
+                        
+                        with col1:
+                            st.write("### Certifications Found")
+                            if results['certifications_found']:
+                                for cert in results['certifications_found']:
+                                    st.write(f"✓ {cert}")
+                            else:
+                                st.write("No certifications found")
+                        
+                        with col2:
+                            st.write("### Quality Indicators")
+                            st.write(f"Quality mentions: {results['quality_mentions']}")
+                            st.write(f"Process mentions: {results['process_mentions']}")
+                            st.write(f"Tools mentions: {results['tools_mentions']}")
+                        
+                        st.write("### Suggested Scores")
+                        for capability, score in results['suggested_scores'].items():
+                            st.metric(
+                                capability,
+                                f"{score}/10",
+                                help="Suggested score based on website analysis"
+                            )
+                        
+                        st.write("### Quality-Related Pages")
+                        if results['quality_pages']:
+                            for page in results['quality_pages'][:5]:  # Show top 5 pages
+                                st.write(f"- {page}")
+                        
+                        # Option to use suggested scores
+                        if st.button("Use Suggested Scores"):
+                            for cap_id, score in results['suggested_scores'].items():
+                                st.session_state[f"score_{cap_id}"] = score
+                            st.success("Scores updated! Switch to Manual Assessment tab to review and adjust.")
+            else:
+                st.warning("Please enter a website URL")
+    
+    with collection_tab:
+        # Your existing manual collection code here
+        ...
 
 # Quality Capability Class
 class QualityCapability:
