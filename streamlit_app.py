@@ -1,3 +1,5 @@
+# streamlit_app.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -13,72 +15,29 @@ import pdfplumber
 import io
 from typing import Dict, List, Optional
 
-# Move this to the very top of your file, right after the imports
+# Set page config at the very top
 st.set_page_config(layout="wide", page_title="Quality Management System")
 
-# Your existing classes and functions here...
-
-def test_app_running():
-    st.write("App is running!")
-    return True
-
-if __name__ == "__main__":
-    # Main title
-    st.title("Quality Management System")
-    
-    # Initialize session state for capability manager
-    if 'capability_manager' not in st.session_state:
-        st.session_state.capability_manager = QualityCapabilityManager()
-    
-    # Create tabs
-    tabs = st.tabs([
-        "Data Collection",
-        "Analysis",
-        "Capability Management",
-        "Export/Import"
-    ])
-    
-    # Populate tabs
-    with tabs[0]:
-        create_data_collection_ui(st.session_state.capability_manager)
-    
-    with tabs[1]:
-        create_analysis_ui(st.session_state.capability_manager)
-    
-    with tabs[2]:
-        create_capability_management_ui(st.session_state.capability_manager)
-    
-    with tabs[3]:
-        export_import_ui()
-# Add this at the very start of your file, after imports
-def test_app_running():
-    st.write("App is running!")
-    return True
-
-# Quality Capability Class
+# Base Classes
 class QualityCapability:
     def __init__(self, name: str, category: str, scoring_criteria: dict):
         self.name = name
         self.category = category
         self.scoring_criteria = scoring_criteria
 
-# Quality Manager Class
 class QualityCapabilityManager:
     def __init__(self):
         self.capabilities = {}
         self._initialize_base_capabilities()
     
     def add_capability(self, id: str, name: str, category: str, scoring_criteria: dict):
-        """Add a new quality capability"""
         self.capabilities[id] = QualityCapability(name, category, scoring_criteria)
     
     def remove_capability(self, id: str):
-        """Remove a quality capability"""
         if id in self.capabilities:
             del self.capabilities[id]
     
     def edit_capability(self, id: str, name: str = None, category: str = None, scoring_criteria: dict = None):
-        """Edit an existing quality capability"""
         if id in self.capabilities:
             cap = self.capabilities[id]
             if name:
@@ -89,15 +48,12 @@ class QualityCapabilityManager:
                 cap.scoring_criteria = scoring_criteria
     
     def get_capabilities_by_category(self, category: str) -> dict:
-        """Get all capabilities in a specific category"""
         return {id: cap for id, cap in self.capabilities.items() if cap.category == category}
     
     def get_all_categories(self) -> list:
-        """Get list of all unique categories"""
         return list(set(cap.category for cap in self.capabilities.values()))
     
     def _initialize_base_capabilities(self):
-        """Initialize with basic capabilities"""
         base_capabilities = {
             "QMS": {
                 "name": "Quality Management System",
@@ -107,7 +63,7 @@ class QualityCapabilityManager:
                     "3": "Basic quality procedures",
                     "5": "ISO 9001 implementation in progress",
                     "7": "ISO 9001 certified",
-                    "10": "Advanced integrated QMS with multiple certifications"
+                    "10": "Advanced integrated QMS"
                 }
             },
             "SPC": {
@@ -116,9 +72,9 @@ class QualityCapabilityManager:
                 "criteria": {
                     "1": "No SPC implementation",
                     "3": "Basic data collection",
-                    "5": "Regular SPC charts and analysis",
-                    "7": "Advanced SPC with process capability studies",
-                    "10": "Real-time SPC with automated controls"
+                    "5": "Regular SPC charts",
+                    "7": "Advanced SPC with process capability",
+                    "10": "Real-time SPC"
                 }
             },
             "ProcessControl": {
@@ -164,7 +120,6 @@ class DocumentAnalyzer:
         }
 
     def analyze_pdf(self, pdf_file) -> dict:
-        """Analyze PDF content for quality-related information"""
         try:
             text_content = ""
             with pdfplumber.open(pdf_file) as pdf:
@@ -172,7 +127,6 @@ class DocumentAnalyzer:
                     text_content += page.extract_text().lower()
             
             return self._analyze_text_content(text_content)
-        
         except Exception as e:
             return {
                 'error': str(e),
@@ -184,7 +138,6 @@ class DocumentAnalyzer:
             }
 
     def analyze_website(self, url: str) -> dict:
-        """Analyze website content for quality-related information"""
         try:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
@@ -205,7 +158,6 @@ class DocumentAnalyzer:
                     results['quality_pages'].append(full_url)
             
             return results
-            
         except Exception as e:
             return {
                 'error': str(e),
@@ -218,7 +170,6 @@ class DocumentAnalyzer:
             }
 
     def _analyze_text_content(self, text_content: str) -> dict:
-        """Analyze text content for quality-related information"""
         results = {
             'certifications_found': [],
             'quality_mentions': 0,
@@ -242,13 +193,10 @@ class DocumentAnalyzer:
         for term in self.quality_indicators['tools_terms']:
             results['tools_mentions'] += len(re.findall(r'\b' + re.escape(term.lower()) + r'\b', text_content))
         
-        # Calculate scores
         results['suggested_scores'] = self._calculate_suggested_scores(results)
-        
         return results
 
     def _calculate_suggested_scores(self, results: dict) -> dict:
-        """Calculate suggested scores based on analyzed data"""
         scores = {}
         
         # QMS Score
@@ -277,6 +225,36 @@ class DocumentAnalyzer:
         
         return scores
 
+def display_analysis_results(results: dict):
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("### Found Certifications")
+        if results['certifications_found']:
+            for cert in results['certifications_found']:
+                st.write(f"✓ {cert}")
+        else:
+            st.write("No certifications found")
+        
+        st.write("### Quality Metrics")
+        metrics = {
+            "Quality References": results['quality_mentions'],
+            "Process References": results['process_mentions'],
+            "Tools References": results['tools_mentions']
+        }
+        for metric, value in metrics.items():
+            st.metric(metric, value)
+    
+    with col2:
+        st.write("### Suggested Capability Scores")
+        for capability, score in results['suggested_scores'].items():
+            st.metric(capability, f"{score}/10")
+        
+        if 'quality_pages' in results and results['quality_pages']:
+            st.write("### Quality-Related Pages")
+            for page in results['quality_pages'][:5]:
+                st.write(f"- {page}")
+
 def create_data_collection_ui(capability_manager):
     st.header("Quality Data Collection")
     
@@ -286,7 +264,6 @@ def create_data_collection_ui(capability_manager):
     # Document Analysis Tab
     with tabs[2]:
         st.subheader("Document Analysis")
-        
         uploaded_file = st.file_uploader("Upload Quality Document", type=['pdf'])
         
         if uploaded_file:
@@ -305,7 +282,6 @@ def create_data_collection_ui(capability_manager):
     # Website Analysis Tab
     with tabs[1]:
         st.subheader("Website Analysis")
-        
         company_url = st.text_input("Company Website URL")
         
         if st.button("Analyze Website"):
@@ -388,37 +364,6 @@ def create_data_collection_ui(capability_manager):
             else:
                 st.error("Please enter company name")
 
-def display_analysis_results(results: dict):
-    """Display analysis results in a structured format"""
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("### Found Certifications")
-        if results['certifications_found']:
-            for cert in results['certifications_found']:
-                st.write(f"✓ {cert}")
-        else:
-            st.write("No certifications found")
-        
-        st.write("### Quality Metrics")
-        metrics = {
-            "Quality References": results['quality_mentions'],
-            "Process References": results['process_mentions'],
-            "Tools References": results['tools_mentions']
-        }
-        for metric, value in metrics.items():
-            st.metric(metric, value)
-    
-    with col2:
-        st.write("### Suggested Capability Scores")
-        for capability, score in results['suggested_scores'].items():
-            st.metric(capability, f"{score}/10")
-        
-        if 'quality_pages' in results and results['quality_pages']:
-            st.write("### Quality-Related Pages")
-            for page in results['quality_pages'][:5]:
-                st.write(f"- {page}")
-
 def create_analysis_ui(capability_manager):
     st.header("Quality Analysis Dashboard")
     
@@ -426,7 +371,6 @@ def create_analysis_ui(capability_manager):
         st.info("No assessments available for analysis. Please collect some data first.")
         return
     
-    # Analysis Options
     analysis_type = st.selectbox(
         "Select Analysis Type",
         ["Industry Benchmark", "Capability Comparison", "Trend Analysis"]
@@ -456,38 +400,17 @@ def create_analysis_ui(capability_manager):
             yaxis_title='Industry'
         )
         
-        st.plotly
+        st.plotly_chart(fig)
+    
+    elif analysis_type == "Capability Comparison":
+        st.subheader("Capability Comparison")
         
-if __name__ == "__main__":
-    # Test if app is running
-    test_app_running()
-    
-    st.set_page_config(layout="wide", page_title="Quality Management System")
-    
-    # Initialize session state for capability manager
-    if 'capability_manager' not in st.session_state:
-        st.session_state.capability_manager = QualityCapabilityManager()
-    
-    # Main title
-    st.title("Quality Management System")
-    
-    # Create tabs
-    tabs = st.tabs([
-        "Data Collection",
-        "Analysis",
-        "Capability Management",
-        "Export/Import"
-    ])
-    
-    # Populate tabs
-    with tabs[0]:
-        create_data_collection_ui(st.session_state.capability_manager)
-    
-    with tabs[1]:
-        create_analysis_ui(st.session_state.capability_manager)
-    
-    with tabs[2]:
-        create_capability_management_ui(st.session_state.capability_manager)
-    
-    with tabs[3]:
-        export_import_ui()
+        companies = pd.DataFrame(st.session_state.assessments)['company_name'].unique()
+        selected_companies = st.multiselect(
+            "Select Companies to Compare",
+            companies
+        )
+        
+        if selected_companies:
+            df = pd.DataFrame(st.session_state.assessments)
+            company_data = df[
