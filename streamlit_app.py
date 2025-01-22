@@ -413,4 +413,58 @@ def create_analysis_ui(capability_manager):
         
         if selected_companies:
             df = pd.DataFrame(st.session_state.assessments)
-            company_data = df[
+            company_data = df[df['company_name'].isin(selected_companies)]
+            
+            fig = go.Figure()
+            
+            for company in selected_companies:
+                company_scores = company_data[company_data['company_name'] == company].iloc[0]
+                capabilities = list(capability_manager.capabilities.keys())
+                scores = [company_scores.get(cap, 0) for cap in capabilities]
+                
+                fig.add_trace(go.Scatterpolar(
+                    r=scores,
+                    theta=capabilities,
+                    fill='toself',
+                    name=company
+                ))
+            
+            fig.update_layout(
+                polar=dict(
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, 10]
+                    )
+                ),
+                showlegend=True
+            )
+            
+            st.plotly_chart(fig)
+    
+    elif analysis_type == "Trend Analysis":
+        st.info("Trend analysis feature coming soon!")
+
+# Main execution
+if __name__ == "__main__":
+    st.title("Quality Management System")
+    
+    # Initialize session state for capability manager
+    if 'capability_manager' not in st.session_state:
+        st.session_state.capability_manager = QualityCapabilityManager()
+    
+    # Create tabs
+    tabs = st.tabs([
+        "Data Collection",
+        "Analysis",
+        "Capability Management"
+    ])
+    
+    # Populate tabs
+    with tabs[0]:
+        create_data_collection_ui(st.session_state.capability_manager)
+    
+    with tabs[1]:
+        create_analysis_ui(st.session_state.capability_manager)
+    
+    with tabs[2]:
+        create_capability_management_ui(st.session_state.capability_manager)
