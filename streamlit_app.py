@@ -1,5 +1,3 @@
-# app.py
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -14,6 +12,93 @@ from urllib.parse import urlparse, urljoin
 import pdfplumber
 import io
 from typing import Dict, List, Optional
+
+# Quality Capability Class
+class QualityCapability:
+    def __init__(self, name: str, category: str, scoring_criteria: dict):
+        self.name = name
+        self.category = category
+        self.scoring_criteria = scoring_criteria
+
+# Quality Manager Class
+class QualityCapabilityManager:
+    def __init__(self):
+        self.capabilities = {}
+        self._initialize_base_capabilities()
+    
+    def add_capability(self, id: str, name: str, category: str, scoring_criteria: dict):
+        """Add a new quality capability"""
+        self.capabilities[id] = QualityCapability(name, category, scoring_criteria)
+    
+    def remove_capability(self, id: str):
+        """Remove a quality capability"""
+        if id in self.capabilities:
+            del self.capabilities[id]
+    
+    def edit_capability(self, id: str, name: str = None, category: str = None, scoring_criteria: dict = None):
+        """Edit an existing quality capability"""
+        if id in self.capabilities:
+            cap = self.capabilities[id]
+            if name:
+                cap.name = name
+            if category:
+                cap.category = category
+            if scoring_criteria:
+                cap.scoring_criteria = scoring_criteria
+    
+    def get_capabilities_by_category(self, category: str) -> dict:
+        """Get all capabilities in a specific category"""
+        return {id: cap for id, cap in self.capabilities.items() if cap.category == category}
+    
+    def get_all_categories(self) -> list:
+        """Get list of all unique categories"""
+        return list(set(cap.category for cap in self.capabilities.values()))
+    
+    def _initialize_base_capabilities(self):
+        """Initialize with basic capabilities"""
+        base_capabilities = {
+            "QMS": {
+                "name": "Quality Management System",
+                "category": "System",
+                "criteria": {
+                    "1": "No formal QMS",
+                    "3": "Basic quality procedures",
+                    "5": "ISO 9001 implementation in progress",
+                    "7": "ISO 9001 certified",
+                    "10": "Advanced integrated QMS with multiple certifications"
+                }
+            },
+            "SPC": {
+                "name": "Statistical Process Control",
+                "category": "Tools",
+                "criteria": {
+                    "1": "No SPC implementation",
+                    "3": "Basic data collection",
+                    "5": "Regular SPC charts and analysis",
+                    "7": "Advanced SPC with process capability studies",
+                    "10": "Real-time SPC with automated controls"
+                }
+            },
+            "ProcessControl": {
+                "name": "Process Control",
+                "category": "Process",
+                "criteria": {
+                    "1": "No process control",
+                    "3": "Basic process documentation",
+                    "5": "Standard work instructions",
+                    "7": "Process control plans",
+                    "10": "Advanced process control system"
+                }
+            }
+        }
+        
+        for cap_id, cap_info in base_capabilities.items():
+            self.add_capability(
+                cap_id,
+                cap_info["name"],
+                cap_info["category"],
+                cap_info["criteria"]
+            )
 
 class DocumentAnalyzer:
     def __init__(self):
@@ -33,10 +118,6 @@ class DocumentAnalyzer:
             'tools_terms': [
                 'quality tools', 'measurement system', 'calibration', 
                 'inspection', 'testing equipment'
-            ],
-            'management_terms': [
-                'management review', 'quality objectives', 'quality manual',
-                'quality records', 'document control'
             ]
         }
 
@@ -47,9 +128,9 @@ class DocumentAnalyzer:
             with pdfplumber.open(pdf_file) as pdf:
                 for page in pdf.pages:
                     text_content += page.extract_text().lower()
-
+            
             return self._analyze_text_content(text_content)
-
+        
         except Exception as e:
             return {
                 'error': str(e),
@@ -73,7 +154,7 @@ class DocumentAnalyzer:
             text_content = soup.get_text().lower()
             results = self._analyze_text_content(text_content)
             
-            # Additional web-specific analysis
+            # Find quality-related pages
             results['quality_pages'] = []
             for link in soup.find_all('a', href=True):
                 href = link.get('href')
@@ -82,7 +163,7 @@ class DocumentAnalyzer:
                     results['quality_pages'].append(full_url)
             
             return results
-
+            
         except Exception as e:
             return {
                 'error': str(e),
@@ -101,16 +182,15 @@ class DocumentAnalyzer:
             'quality_mentions': 0,
             'process_mentions': 0,
             'tools_mentions': 0,
-            'management_mentions': 0,
             'suggested_scores': {}
         }
-
+        
         # Find certifications
         for cert in self.quality_indicators['certifications']:
             if cert.lower() in text_content:
                 results['certifications_found'].append(cert)
-
-        # Count various mentions
+        
+        # Count mentions
         for term in self.quality_indicators['quality_terms']:
             results['quality_mentions'] += len(re.findall(r'\b' + re.escape(term.lower()) + r'\b', text_content))
         
@@ -120,10 +200,7 @@ class DocumentAnalyzer:
         for term in self.quality_indicators['tools_terms']:
             results['tools_mentions'] += len(re.findall(r'\b' + re.escape(term.lower()) + r'\b', text_content))
         
-        for term in self.quality_indicators['management_terms']:
-            results['management_mentions'] += len(re.findall(r'\b' + re.escape(term.lower()) + r'\b', text_content))
-
-        # Calculate suggested scores
+        # Calculate scores
         results['suggested_scores'] = self._calculate_suggested_scores(results)
         
         return results
@@ -134,68 +211,29 @@ class DocumentAnalyzer:
         
         # QMS Score
         qms_score = min(
-            (len(results['certifications_found']) * 2) +  # 2 points per certification
-            (results['quality_mentions'] // 5) +          # 1 point per 5 quality mentions
-            (results['management_mentions'] // 3),        # 1 point per 3 management mentions
-            10  # Max score of 10
+            (len(results['certifications_found']) * 2) +
+            (results['quality_mentions'] // 5),
+            10
         )
-        scores['QMS'] = max(1, qms_score)  # Minimum score of 1
+        scores['QMS'] = max(1, qms_score)
         
         # Process Control Score
         process_score = min(
-            (results['process_mentions'] // 3) +          # 1 point per 3 process mentions
-            (results.get('quality_pages', []).__len__() // 2),  # 1 point per 2 quality pages
+            (results['process_mentions'] // 3) +
+            (len(results.get('quality_pages', [])) // 2),
             10
         )
         scores['ProcessControl'] = max(1, process_score)
         
-        # Tools Score
+        # SPC Score
         tools_score = min(
-            (results['tools_mentions'] // 2) +            # 1 point per 2 tools mentions
-            (len(results['certifications_found'])),       # 1 point per certification
+            (results['tools_mentions'] // 2) +
+            len(results['certifications_found']),
             10
         )
         scores['SPC'] = max(1, tools_score)
         
         return scores
-
-class QualityCapability:
-    def __init__(self, name: str, category: str, scoring_criteria: dict):
-        self.name = name
-        self.category = category
-        self.scoring_criteria = scoring_criteria
-
-class QualityCapabilityManager:
-    def __init__(self):
-        self.capabilities = {}
-        self._initialize_base_capabilities()
-    
-    def _initialize_base_capabilities(self):
-        # Initialize with basic capabilities...
-        base_capabilities = {
-            "QMS": {
-                "name": "Quality Management System",
-                "category": "System",
-                "criteria": {
-                    "1": "No formal QMS",
-                    "3": "Basic quality procedures",
-                    "5": "ISO 9001 implementation in progress",
-                    "7": "ISO 9001 certified",
-                    "10": "Advanced integrated QMS with multiple certifications"
-                }
-            },
-            # Add more capabilities here...
-        }
-        
-        for cap_id, cap_info in base_capabilities.items():
-            self.add_capability(
-                cap_id,
-                cap_info["name"],
-                cap_info["category"],
-                cap_info["criteria"]
-            )
-
-    # ... (rest of QualityCapabilityManager methods)
 
 def create_data_collection_ui(capability_manager):
     st.header("Quality Data Collection")
@@ -244,7 +282,69 @@ def create_data_collection_ui(capability_manager):
     # Manual Entry Tab
     with tabs[0]:
         st.subheader("Manual Assessment")
-        # ... (existing manual entry code)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            company_name = st.text_input("Company Name")
+            industry = st.selectbox("Industry", ["Manufacturing", "Technology", "Healthcare", "Automotive", "Other"])
+        
+        with col2:
+            assessment_date = st.date_input("Assessment Date")
+            assessor = st.text_input("Assessor Name")
+        
+        st.write("### Capability Assessment")
+        scores = {}
+        evidence = {}
+        
+        for category in capability_manager.get_all_categories():
+            st.write(f"\n#### {category}")
+            capabilities = capability_manager.get_capabilities_by_category(category)
+            
+            for cap_id, cap in capabilities.items():
+                col1, col2 = st.columns([2, 3])
+                
+                with col1:
+                    scores[cap_id] = st.slider(
+                        f"{cap.name}",
+                        min_value=1,
+                        max_value=10,
+                        step=2,
+                        value=5,
+                        key=f"manual_score_{cap_id}"
+                    )
+                
+                with col2:
+                    evidence[cap_id] = st.text_area(
+                        "Evidence/Notes",
+                        key=f"manual_evidence_{cap_id}",
+                        height=100
+                    )
+                    
+                    with st.expander("View Scoring Criteria"):
+                        for level, desc in cap.scoring_criteria.items():
+                            if int(level) == scores[cap_id]:
+                                st.markdown(f"**Level {level}:** {desc} 👈")
+                            else:
+                                st.write(f"Level {level}: {desc}")
+        
+        if st.button("Save Assessment"):
+            if company_name:
+                if 'assessments' not in st.session_state:
+                    st.session_state.assessments = []
+                
+                assessment = {
+                    "company_name": company_name,
+                    "industry": industry,
+                    "assessment_date": assessment_date.strftime("%Y-%m-%d"),
+                    "assessor": assessor,
+                    "scores": scores,
+                    "evidence": evidence
+                }
+                
+                st.session_state.assessments.append(assessment)
+                st.success("Assessment saved successfully!")
+            else:
+                st.error("Please enter company name")
 
 def display_analysis_results(results: dict):
     """Display analysis results in a structured format"""
@@ -262,8 +362,7 @@ def display_analysis_results(results: dict):
         metrics = {
             "Quality References": results['quality_mentions'],
             "Process References": results['process_mentions'],
-            "Tools References": results['tools_mentions'],
-            "Management References": results.get('management_mentions', 0)
+            "Tools References": results['tools_mentions']
         }
         for metric, value in metrics.items():
             st.metric(metric, value)
@@ -277,34 +376,42 @@ def display_analysis_results(results: dict):
             st.write("### Quality-Related Pages")
             for page in results['quality_pages'][:5]:
                 st.write(f"- {page}")
-    
-    # Option to use suggested scores
-    if st.button("Use These Scores for Assessment"):
-        st.session_state.update(results['suggested_scores'])
-        st.success("Scores updated! Switch to Manual Assessment tab to review and adjust.")
 
-def main():
-    st.set_page_config(layout="wide", page_title="Quality Management System")
+def create_analysis_ui(capability_manager):
+    st.header("Quality Analysis Dashboard")
     
-    if 'capability_manager' not in st.session_state:
-        st.session_state.capability_manager = QualityCapabilityManager()
+    if 'assessments' not in st.session_state or not st.session_state.assessments:
+        st.info("No assessments available for analysis. Please collect some data first.")
+        return
     
-    st.title("Quality Management System")
+    # Analysis Options
+    analysis_type = st.selectbox(
+        "Select Analysis Type",
+        ["Industry Benchmark", "Capability Comparison", "Trend Analysis"]
+    )
     
-    tabs = st.tabs([
-        "Data Collection",
-        "Analysis",
-        "Capability Management"
-    ])
-    
-    with tabs[0]:
-        create_data_collection_ui(st.session_state.capability_manager)
-    
-    with tabs[1]:
-        create_analysis_ui(st.session_state.capability_manager)
-    
-    with tabs[2]:
-        create_capability_management_ui(st.session_state.capability_manager)
-
-if __name__ == "__main__":
-    main()
+    if analysis_type == "Industry Benchmark":
+        st.subheader("Industry Benchmark Analysis")
+        
+        df = pd.DataFrame(st.session_state.assessments)
+        capability_cols = list(capability_manager.capabilities.keys())
+        industry_avg = df.groupby('industry')[capability_cols].mean()
+        
+        fig = go.Figure(data=go.Heatmap(
+            z=industry_avg.values,
+            x=capability_cols,
+            y=industry_avg.index,
+            colorscale='Blues',
+            text=np.round(industry_avg.values, 1),
+            texttemplate='%{text}',
+            textfont={"size": 10},
+            colorbar=dict(title='Score')
+        ))
+        
+        fig.update_layout(
+            title='Industry Average Scores by Capability',
+            xaxis_title='Capabilities',
+            yaxis_title='Industry'
+        )
+        
+        st.plotly
